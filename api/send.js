@@ -93,6 +93,11 @@ module.exports = async (req, res) => {
       amount: parseFloat(amount),
     });
 
+    // Ensure Twilio phone number is set
+    if (!process.env.TWILIO_PHONE_NUMBER) {
+      throw new Error("Twilio phone number is not set.");
+    }
+
     // Send OTP using Twilio
     await twilioClient.messages.create({
       body: `Your OTP is ${otp}. Use it to claim your wallet.`,
