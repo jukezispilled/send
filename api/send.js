@@ -1,3 +1,5 @@
+require('dotenv').config();  // Ensure this is at the top if you're using dotenv to load environment variables
+
 const crypto = require("crypto");
 const twilio = require("twilio");
 const { MongoClient } = require("mongodb");
@@ -10,47 +12,29 @@ const twilioClient = twilio(accountSid, authToken);
 const encryptionKey = process.env.ENCRYPTION_KEY; // A secure key for encryption
 const mongoUri = process.env.MONGODB_URI; // MongoDB connection string
 
-// Create a MongoClient instance
+console.log('TWILIO_ACCOUNT_SID:', accountSid);
+console.log('TWILIO_AUTH_TOKEN:', authToken);
+console.log('TWILIO_PHONE_NUMBER:', process.env.TWILIO_PHONE_NUMBER);
+
 const client = new MongoClient(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
 
-// Encryption function using AES-256-CBC
 const encryptData = (data) => {
   const key = Buffer.from(encryptionKey, 'hex');
-  
-  // Generate a random 16-byte IV for AES-256-CBC
   const iv = crypto.randomBytes(16);
 
-  // Initialize the cipher
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
 
   let encrypted = cipher.update(JSON.stringify(data), 'utf-8', 'hex');
   encrypted += cipher.final('hex');
 
-  // Combine IV and encrypted data for later decryption
   const ivHex = iv.toString('hex');
   return `${ivHex}:${encrypted}`;
 };
 
-// Decryption function to retrieve original data
-const decryptData = (encryptedData) => {
-  const [ivHex, encrypted] = encryptedData.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const key = Buffer.from(encryptionKey, 'hex');
-
-  // Initialize the decipher
-  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-
-  let decrypted = decipher.update(encrypted, 'hex', 'utf-8');
-  decrypted += decipher.final('utf-8');
-
-  return JSON.parse(decrypted); // Assuming the encrypted data was a JSON string
-};
-
-// Generate Solana wallet (public and private key)
 const generateRecipientWallet = () => {
   const keypair = Keypair.generate();
   const publicKey = keypair.publicKey.toString();
-  const privateKey = keypair.secretKey.toString('hex'); // Store the private key securely
+  const privateKey = keypair.secretKey.toString('hex');
 
   return { publicKey, privateKey };
 };
@@ -70,7 +54,6 @@ module.exports = async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const recipientWallet = generateRecipientWallet();
 
-    // Encrypt the wallet and OTP before storing
     const encryptedWallet = encryptData({
       publicKey: recipientWallet.publicKey,
       privateKey: recipientWallet.privateKey,
@@ -78,14 +61,10 @@ module.exports = async (req, res) => {
 
     const encryptedOtp = encryptData({ otp });
 
-    // Connect to MongoDB
     await client.connect();
-
-    // Get the database and collection
     const db = client.db();
     const recipientsCollection = db.collection('recipients');
 
-    // Insert recipient data into the MongoDB collection
     await recipientsCollection.insertOne({
       phoneNumber,
       otp: encryptedOtp,
@@ -93,12 +72,6 @@ module.exports = async (req, res) => {
       amount: parseFloat(amount),
     });
 
-    // Ensure Twilio phone number is set
-    if (!process.env.TWILIO_PHONE_NUMBER) {
-      throw new Error("Twilio phone number is not set.");
-    }
-
-    // Send OTP using Twilio
     await twilioClient.messages.create({
       body: `Your OTP is ${otp}. Use it to claim your wallet.`,
       from: process.env.TWILIO_PHONE_NUMBER,
@@ -110,7 +83,6 @@ module.exports = async (req, res) => {
     console.error("Error sending OTP:", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
   } finally {
-    // Close the MongoDB connection
     await client.close();
   }
 };
