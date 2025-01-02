@@ -13,11 +13,37 @@ const mongoUri = process.env.MONGODB_URI; // MongoDB connection string
 // Create a MongoClient instance
 const client = new MongoClient(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
 
+// Encryption function using AES-256-CBC
 const encryptData = (data) => {
-  const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(encryptionKey, 'hex'), Buffer.from(encryptionKey.slice(0, 16), 'hex'));
+  const key = Buffer.from(encryptionKey, 'hex');
+  
+  // Generate a random 16-byte IV for AES-256-CBC
+  const iv = crypto.randomBytes(16);
+
+  // Initialize the cipher
+  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+
   let encrypted = cipher.update(JSON.stringify(data), 'utf-8', 'hex');
   encrypted += cipher.final('hex');
-  return encrypted;
+
+  // Combine IV and encrypted data for later decryption
+  const ivHex = iv.toString('hex');
+  return `${ivHex}:${encrypted}`;
+};
+
+// Decryption function to retrieve original data
+const decryptData = (encryptedData) => {
+  const [ivHex, encrypted] = encryptedData.split(':');
+  const iv = Buffer.from(ivHex, 'hex');
+  const key = Buffer.from(encryptionKey, 'hex');
+
+  // Initialize the decipher
+  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+
+  let decrypted = decipher.update(encrypted, 'hex', 'utf-8');
+  decrypted += decipher.final('utf-8');
+
+  return JSON.parse(decrypted); // Assuming the encrypted data was a JSON string
 };
 
 // Generate Solana wallet (public and private key)
@@ -67,6 +93,7 @@ module.exports = async (req, res) => {
       amount: parseFloat(amount),
     });
 
+    // Send OTP using Twilio
     await twilioClient.messages.create({
       body: `Your OTP is ${otp}. Use it to claim your wallet.`,
       from: process.env.TWILIO_PHONE_NUMBER,
