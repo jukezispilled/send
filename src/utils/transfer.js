@@ -5,6 +5,7 @@ const {
     PublicKey,
     Transaction,
     SystemProgram,
+    sendAndConfirmTransaction, // Import sendAndConfirmTransaction
   } = require("@solana/web3.js");
   
   const transferFunds = async (senderSecretKey, recipientPublicKey, amount) => {
@@ -23,9 +24,8 @@ const {
       })
     );
   
-    // Sign and send the transaction
-    const signature = await connection.sendTransaction(transaction, [sender]);
-    await connection.confirmTransaction(signature);
+    // Send and confirm the transaction using sendAndConfirmTransaction
+    const signature = await sendAndConfirmTransaction(connection, transaction, [sender]);
   
     return signature; // Return the transaction signature
   };
