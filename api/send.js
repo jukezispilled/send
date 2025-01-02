@@ -1,17 +1,17 @@
 const crypto = require("crypto");
 const twilio = require("twilio");
-const mongoose = require("mongoose");
+const { MongoClient } = require("mongodb");
 const { Keypair } = require('@solana/web3.js'); // Import Solana library
-const Recipient = require("../models/Recipient");
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioClient = twilio(accountSid, authToken);
 
 const encryptionKey = process.env.ENCRYPTION_KEY; // A secure key for encryption
+const mongoUri = process.env.MONGODB_URI; // MongoDB connection string
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+// Create a MongoClient instance
+const client = new MongoClient(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
 
 const encryptData = (data) => {
   const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(encryptionKey, 'hex'), Buffer.from(encryptionKey.slice(0, 16), 'hex'));
@@ -52,15 +52,20 @@ module.exports = async (req, res) => {
 
     const encryptedOtp = encryptData({ otp });
 
-    // Store in MongoDB
-    const recipient = new Recipient({
+    // Connect to MongoDB
+    await client.connect();
+
+    // Get the database and collection
+    const db = client.db();
+    const recipientsCollection = db.collection('recipients');
+
+    // Insert recipient data into the MongoDB collection
+    await recipientsCollection.insertOne({
       phoneNumber,
       otp: encryptedOtp,
       wallet: encryptedWallet,
       amount: parseFloat(amount),
     });
-
-    await recipient.save();
 
     await twilioClient.messages.create({
       body: `Your OTP is ${otp}. Use it to claim your wallet.`,
@@ -72,5 +77,8 @@ module.exports = async (req, res) => {
   } catch (error) {
     console.error("Error sending OTP:", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
+  } finally {
+    // Close the MongoDB connection
+    await client.close();
   }
 };
